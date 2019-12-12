@@ -1,6 +1,7 @@
 package types
 
 import (
+	"encoding/json"
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/vishvananda/netlink"
@@ -10,14 +11,18 @@ import (
 // NetConf extends types.NetConf for ib-sriov-cni
 type NetConf struct {
 	types.NetConf
-	Master      string
-	DeviceID    string `json:"deviceID"` // PCI address of a VF in valid sysfs format
-	VFID        int
-	HostIFNames string // VF netdevice name(s)
-	HostIFGUID  string // VF netdevice GUID
-	ContIFNames string // VF names after in the container; used during deletion
-	GUID        string `json:"guid"`
-	LinkState   string `json:"link_state,omitempty"` // auto|enable|disable
+	Master             string
+	DeviceID           string `json:"deviceID"` // PCI address of a VF in valid sysfs format
+	VFID               int
+	HostIFNames        string // VF netdevice name(s)
+	HostIFGUID         string // VF netdevice GUID
+	ContIFNames        string // VF names after in the container; used during deletion
+	ActiveGUID         string
+	GUID               string          `json:"guid"`
+	PKey               string          `json:"pkey"`
+	LinkState          string          `json:"link_state,omitempty"` // auto|enable|disable
+	SubnetMangerClient string          `json:"subnetManger"`
+	SubnetMangerConfig json.RawMessage `json:"subnetMangerConfig"`
 }
 
 // Manager provides interface invoke sriov nic related operations
@@ -49,4 +54,11 @@ type PciUtils interface {
 	GetVFLinkNamesFromVFID(pfName string, vfID int) ([]string, error)
 	GetPciAddress(ifName string, vf int) (string, error)
 	RebindVf(pfName, vfPciAddress string) error
+}
+
+// SubnetManagerClient is interface to help connecting Infiniband subnet manger
+type SubnetMangerClient interface {
+	Connect() error
+	AddPKey(string, string) error
+	RemovePKey(string, string) error
 }

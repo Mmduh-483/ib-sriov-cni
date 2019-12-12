@@ -2,8 +2,10 @@ package sriov
 
 import (
 	"fmt"
+	"github.com/Mellanox/ib-sriov-cni/pkg/subnet_manger_client"
 	"github.com/Mellanox/sriovnet"
 	"net"
+	"strings"
 
 	"github.com/containernetworking/plugins/pkg/ns"
 
@@ -223,11 +225,7 @@ func (s *sriovManager) ApplyVFConfig(conf *types.NetConf) error {
 		}
 	}
 
-	// Set link guid
-	if conf.GUID != "" {
-		if len(conf.GUID) < 22 || conf.GUID == "00:00:00:00:00:00:00:00" {
-			return fmt.Errorf("invalid guid %s", conf.GUID)
-		}
+	if conf.GUID != "" || conf.PKey != "" {
 		// save link guid
 		vfLink, err := s.nLink.LinkByName(conf.HostIFNames)
 		if err != nil {
@@ -235,6 +233,14 @@ func (s *sriovManager) ApplyVFConfig(conf *types.NetConf) error {
 		}
 
 		conf.HostIFGUID = vfLink.Attrs().HardwareAddr.String()[36:]
+		conf.ActiveGUID = conf.HostIFGUID
+	}
+
+	// Set link guid
+	if conf.GUID != "" {
+		if len(conf.GUID) < 22 || conf.GUID == "00:00:00:00:00:00:00:00" {
+			return fmt.Errorf("invalid guid %s", conf.GUID)
+		}
 
 		// Set link guid
 		guid, err := net.ParseMAC(conf.GUID)
@@ -250,6 +256,22 @@ func (s *sriovManager) ApplyVFConfig(conf *types.NetConf) error {
 		// unbind vf then bind it to apply the new guid
 		if err = s.utils.RebindVf(conf.Master, conf.DeviceID); err != nil {
 			return err
+		}
+		conf.ActiveGUID = conf.GUID
+	}
+
+	// Set link pkey
+	if conf.PKey != "" {
+		smc, err := subnet_manger_client.NewSubNetMangerClient(conf.SubnetMangerClient, conf.SubnetMangerConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create subnet manger client of type %s : %v", conf.SubnetMangerClient, err)
+		}
+		if err = smc.Connect(); err != nil {
+			return fmt.Errorf("failed to connect to subnet manger client of type %s : %v", conf.SubnetMangerClient, err)
+		}
+		trimedGUID := strings.ReplaceAll(conf.ActiveGUID, ":", "")
+		if err = smc.AddPKey(trimedGUID, conf.PKey); err != nil {
+			return fmt.Errorf("failed to add peky to subnet manger client of type %s : %v", conf.SubnetMangerClient, err)
 		}
 	}
 
@@ -275,7 +297,7 @@ func (s *sriovManager) ResetVFConfig(conf *types.NetConf) error {
 	}
 
 	// Reset link guid
-	if conf.HostIFGUID != "" && conf.HostIFGUID != "00:00:00:00:00:00:00:00" {
+	if conf.HostIFGUID != conf.ActiveGUID && conf.HostIFGUID != "00:00:00:00:00:00:00:00" {
 		guid, err := net.ParseMAC(conf.HostIFGUID)
 		if err != nil {
 			return fmt.Errorf("failed to parse guid %s: %v", conf.HostIFGUID, err)
@@ -289,6 +311,21 @@ func (s *sriovManager) ResetVFConfig(conf *types.NetConf) error {
 		// unbind vf then bind it to apply the guid
 		if err = s.utils.RebindVf(conf.Master, conf.DeviceID); err != nil {
 			return err
+		}
+	}
+
+	// Remove link pkey
+	if conf.PKey != "" {
+		smc, err := subnet_manger_client.NewSubNetMangerClient(conf.SubnetMangerClient, conf.SubnetMangerConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create subnet manger client of type %s : %v", conf.SubnetMangerClient, err)
+		}
+		if err = smc.Connect(); err != nil {
+			return fmt.Errorf("failed to connect to subnet manger client of type %s : %v", conf.SubnetMangerClient, err)
+		}
+		trimedGUID := strings.ReplaceAll(conf.ActiveGUID, ":", "")
+		if err = smc.RemovePKey(trimedGUID, conf.PKey); err != nil {
+			return fmt.Errorf("failed to remove peky to subnet manger client of type %s : %v", conf.SubnetMangerClient, err)
 		}
 	}
 
